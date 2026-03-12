@@ -203,3 +203,127 @@ def calculate_top_transactions(df: pd.DataFrame) -> list:
         })
 
     return result
+
+
+def categorize_transaction(row) -> str:
+    """
+    Определение категории для группировки
+    """
+    category = str(row.get('Категория', '')).strip()
+    description = str(row.get('Описание', '')).lower()
+
+    # Определяем переводы и наличные
+    if 'перевод' in description.lower() or category == 'Переводы':
+        return 'Переводы'
+    elif 'наличные' in description.lower() or category == 'Наличные':
+        return 'Наличные'
+    elif category and category != 'nan':
+        return category
+    else:
+        return 'Прочее'
+
+
+def calculate_expenses_data(df: pd.DataFrame) -> dict:
+    """
+    Расчет данных по расходам
+    """
+    # Только расходы (отрицательные суммы)
+    expenses_df = df[df['Сумма операции'] < 0].copy()
+
+    if expenses_df.empty:
+        return {
+            "total_amount": 0,
+            "main": [],
+            "transfers_and_cash": []
+        }
+
+    # Общая сумма расходов
+    total_expenses = abs(expenses_df['Сумма операции'].sum())
+
+    # Группировка по категориям
+    expenses_df['category_group'] = expenses_df.apply(categorize_transaction,
+                                                      axis=1)
+
+    # Расходы по категориям
+    category_expenses = expenses_df.groupby('category_group')[
+        'Сумма операции'].sum().abs()
+    category_expenses = category_expenses.sort_values(ascending=False)
+
+    # Основные категории (топ-7)
+    main_categories = []
+    other_sum = 0
+
+    for i, (category, amount) in enumerate(category_expenses.items()):
+        if category in ['Переводы', 'Наличные']:
+            continue  # Эти категории пойдут в отдельный раздел
+        elif i < 7:  # Первые 7 категорий
+            main_categories.append({
+                "category": category,
+                "amount": int(round(amount))
+            })
+        else:
+            other_sum += amount
+
+    # Добавляем "Остальное", если есть
+    if other_sum > 0:
+        main_categories.append({
+            "category": "Остальное",
+            "amount": int(round(other_sum))
+        })
+
+    # Переводы и наличные
+    transfers_and_cash = []
+    for category in ['Наличные', 'Переводы']:
+        if category in category_expenses.index:
+            transfers_and_cash.append({
+                "category": category,
+                "amount": int(round(category_expenses[category]))
+            })
+
+    # Сортируем переводы и наличные по убыванию
+    transfers_and_cash.sort(key=lambda x: x['amount'], reverse=True)
+
+    return {
+        "total_amount": int(round(total_expenses)),
+        "main": main_categories,
+        "transfers_and_cash": transfers_and_cash
+    }
+
+
+def calculate_income_data(df: pd.DataFrame) -> dict:
+    """
+    Расчет данных по поступлениям
+    """
+    # Только поступления (положительные суммы)
+    income_df = df[df['Сумма операции'] > 0].copy()
+
+    if income_df.empty:
+        return {
+            "total_amount": 0,
+            "main": []
+        }
+
+    # Общая сумма поступлений
+    total_income = income_df['Сумма операции'].sum()
+
+    # Группировка по категориям
+    income_df['category_group'] = income_df.apply(categorize_transaction,
+                                                  axis=1)
+
+    # Поступления по категориям
+    category_income = income_df.groupby('category_group')[
+        'Сумма операции'].sum()
+    category_income = category_income.sort_values(ascending=False)
+
+    # Основные категории поступлений
+    main_categories = []
+    for category, amount in category_income.items():
+        main_categories.append({
+            "category": category,
+            "amount": int(round(amount))
+        })
+
+    return {
+        "total_amount": int(round(total_income)),
+        "main": main_categories
+    }
