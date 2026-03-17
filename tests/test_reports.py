@@ -389,7 +389,7 @@ def test_multiple_mocks_for_reports(sample_dataframe) -> None:
 
 @patch("builtins.open", new_callable=mock_open)
 @patch("json.dump")
-def test_json_serialization_with_mocks(mock_json_dump) -> None:
+def test_json_serialization_with_mocks(mock_json_dump, mock_file) -> None:
     """Тест сериализации в JSON с моками"""
 
     @save_report("test.json")
@@ -399,6 +399,7 @@ def test_json_serialization_with_mocks(mock_json_dump) -> None:
     test_func()
 
     mock_json_dump.assert_called_once()
+    mock_file.assert_called_once()
 
 
 # ============================================================================

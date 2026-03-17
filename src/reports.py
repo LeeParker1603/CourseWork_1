@@ -21,11 +21,13 @@ logger.setLevel(logging.WARNING)
 # ============================================================================
 
 
-def save_report(filename: Optional[str] = None) -> Callable:
+def save_report(clean_all: bool = True, filename: Optional[str] = None) -> Callable:
     """
     Декоратор для сохранения результатов отчета в файл
+    При каждом вызове старый файл удаляется и создается новый.
 
     Параметры:
+        clean_all: если True, очищает всю папку reports перед записью
         filename: имя файла для сохранения (если не указано, генерируется автоматически)
 
     Примеры использования:
@@ -39,6 +41,21 @@ def save_report(filename: Optional[str] = None) -> Callable:
             # Выполняем функцию
             result = func(*args, **kwargs)
 
+            # Создаем папку reports, если её нет
+            reports_dir = "data/reports"
+            os.makedirs(reports_dir, exist_ok=True)
+
+            # Очищаем всю папку, если нужно
+            if clean_all:
+                for old_file in os.listdir(reports_dir):
+                    if old_file.endswith(".json"):
+                        old_path = os.path.join(reports_dir, old_file)
+                        try:
+                            os.remove(old_path)
+                            logger.info(f"🗑️ Удален файл: {old_file}")
+                        except Exception as e:
+                            logger.warning(f"Не удалось удалить {old_file}: {e}")
+
             # Определяем имя файла для сохранения
             if filename:
                 output_file = filename
@@ -47,9 +64,11 @@ def save_report(filename: Optional[str] = None) -> Callable:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_file = f"{func.__name__}_{timestamp}.json"
 
-            # Создаем папку reports, если её нет
-            os.makedirs("data/reports", exist_ok=True)
-            filepath = os.path.join("data/reports", output_file)
+            filepath = os.path.join(reports_dir, output_file)
+
+            # Если файл существует, удаляем его
+            if os.path.exists(filepath):
+                os.remove(filepath)
 
             # Сохраняем результат
             try:
@@ -334,7 +353,7 @@ def spending_by_workday(transactions: pd.DataFrame, date: Optional[str] = None) 
 # ============================================================================
 
 
-@save_report("detailed_category_analysis.json")
+@save_report(False, "detailed_category_analysis.json")
 def detailed_category_analysis(transactions: pd.DataFrame, category: str, date: Optional[str] = None) -> dict:
     """
     Детальный анализ по категории (дополнительная функция)

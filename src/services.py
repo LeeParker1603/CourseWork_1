@@ -27,6 +27,7 @@ def filter_by_month_year(month: str, year: int) -> Callable:
     """
 
     def filter_func(transaction: Dict[str, Any]) -> bool:
+        date_str = ""
         try:
             date_str = transaction.get("Дата операции", "")
             if pd.isna(date_str):
@@ -274,7 +275,7 @@ def simple_search(transactions: List[Dict[str, Any]], search_string: str) -> str
             if search_lower in description or search_lower in category:
                 # Создаем уникальный ключ для транзакции
                 date_val = transaction.get("Дата операции", "")
-                if hasattr(date_val, "strftime"):
+                if hasattr(date_val, "strftime") and not pd.isna(date_val):
                     date_key = date_val.strftime("%Y%m%d%H%M%S")
                 else:
                     date_key = str(date_val)
@@ -365,41 +366,48 @@ def search_transfers_to_individuals(transactions: List[Dict[str, Any]]) -> str:
 
 def format_transactions_for_json(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Форматирует транзакции для JSON-вывода
+    Форматирует транзакции для JSON-вывода с обработкой NaT и NaN
     """
+
     formatted = []
     seen_keys = set()
 
-    for t in transactions:
-        # СОЗДАЕМ УНИКАЛЬНЫЙ КЛЮЧ ИЗ ВСЕХ ПОЛЕЙ
-        key_parts = []
+    for i, t in enumerate(transactions):
 
+        # Создаем уникальный ключ для проверки дубликатов
+        key_parts = []
         for key, value in t.items():
-            if hasattr(value, "strftime"):
-                key_parts.append(f"{key}:{value.strftime('%Y%m%d%H%M%S')}")
-            else:
-                key_parts.append(f"{key}:{value}")
+            try:
+                if hasattr(value, "strftime"):
+                    if pd.isna(value):
+                        key_parts.append(f"{key}:NaT")
+                    else:
+                        date_str = value.strftime("%Y%m%d%H%M%S")
+                        key_parts.append(f"{key}:{date_str}")
+                else:
+                    key_parts.append(f"{key}:{value}")
+            except Exception as e:
+                key_parts.append(f"{key}:ERROR")
 
         unique_key = "|".join(key_parts)
 
-        # Проверяем, был ли уже такой ключ
         if unique_key in seen_keys:
-            continue  # Пропускаем дубликат
+            continue
 
         seen_keys.add(unique_key)
 
-        # Форматируем транзакцию для JSON
+        # Форматируем транзакцию
         t_copy = {}
         for key, value in t.items():
             try:
-                if hasattr(value, "strftime") and not pd.isna(value):
-                    t_copy[key] = value.strftime("%d.%m.%Y %H:%M:%S")
-                elif pd.isna(value):
+                if pd.isna(value):
                     t_copy[key] = None
+                elif hasattr(value, "strftime"):
+                    date_str = value.strftime("%d.%m.%Y %H:%M:%S")
+                    t_copy[key] = date_str
                 else:
                     t_copy[key] = value
             except Exception as e:
-                print(f"Ошибка при обработке поля {key}: {e}")
                 t_copy[key] = None
 
         formatted.append(t_copy)

@@ -66,7 +66,7 @@ def test_load_user_settings_file_not_found() -> None:
 @patch("os.path.exists")
 @patch("builtins.open", new_callable=mock_open)
 @patch("json.load")
-def test_load_user_settings_success(mock_json_load, mock_exists) -> None:
+def test_load_user_settings_success(mock_json_load, mock_file, mock_exists) -> None:
     """Тест успешной загрузки настроек"""
     # Настраиваем моки
     mock_exists.return_value = True
@@ -78,6 +78,10 @@ def test_load_user_settings_success(mock_json_load, mock_exists) -> None:
     # Проверяем результат (это главное)
     assert result["user_currencies"] == ["USD", "EUR"]
     assert result["user_stocks"] == ["AAPL", "GOOGL"]
+
+    assert mock_exists.call_count > 0
+    mock_file.assert_called()
+    mock_json_load.assert_called_once()
 
 
 @patch("src.utils.requests.get")
@@ -96,7 +100,7 @@ def test_get_currency_rates_success(mock_get):
 @patch("os.path.exists")
 @patch("builtins.open")
 @patch("json.load")
-def test_load_user_settings_json_error(mock_json_load, mock_exists) -> None:
+def test_load_user_settings_json_error(mock_json_load, mock_open, mock_exists) -> None:
     """Тест ошибки при загрузке JSON"""
     # Настраиваем моки
     mock_exists.return_value = True
@@ -109,6 +113,10 @@ def test_load_user_settings_json_error(mock_json_load, mock_exists) -> None:
     assert "user_currencies" in result
     assert "user_stocks" in result
     assert result["user_currencies"] == ["USD", "EUR"]
+
+    assert mock_exists.call_count > 0
+    mock_open.assert_called()
+    mock_json_load.assert_called()
 
 
 def test_get_stock_prices() -> None:

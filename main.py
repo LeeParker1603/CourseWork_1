@@ -2,14 +2,15 @@ import json
 import logging
 import os
 import sys
+from typing import List
 
+from src import services
 from src.reports import detailed_category_analysis, spending_by_category, spending_by_weekday, spending_by_workday
 from src.services import (
     analyze_cashback_categories,
     investment_bank,
     search_by_phone,
     search_transfers_to_individuals,
-    simple_search,
 )
 from src.utils import read_transactions_from_excel
 from src.views import generate_events_page_response, generate_main_page_response
@@ -73,6 +74,11 @@ def save_json_response(data: str, filename: str, subdir: str = "responses"):
     # Убеждаемся, что директория существует
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
+    # Если файл существует, удаляем его (для перезаписи)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    # Сохраняем новый файл
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(data)
 
@@ -93,6 +99,75 @@ def save_text_response(data: str, filename: str, subdir: str = "services"):
 
     logger.info(f"✅ Сохранено: {filepath}")
     return filepath
+
+
+def save_search_results(search_terms: List[str], transactions, services_mod):
+    """
+    Сохраняет результаты поиска для всех указанных терминов
+    и удаляет файлы поиска для терминов, которых нет в списке.
+
+    Args:
+        search_terms: список терминов для поиска
+        transactions: данные транзакций
+        services_mod: модуль с функциями поиска
+    """
+    print("\n" + "-" * 70)
+    print("🔍 СЕРВИС 3: Простой поиск")
+
+    # Множество для хранения имен файлов текущего поиска
+    current_search_files = set()
+
+    # Выполняем поиск для каждого термина и сохраняем результаты
+    for term in search_terms:
+        print(f"\n   Поиск по строке: '{term}'")
+        search_result = services_mod.simple_search(transactions, term)
+        safe_term = term.replace(' ', '_').lower()
+        filename = f"search_{safe_term}.json"
+
+        # Добавляем в множество текущих файлов
+        current_search_files.add(filename)
+
+        # Сохраняем результат (временно без очистки)
+        save_json_response(search_result, filename, "services")
+
+    # После сохранения всех результатов - очищаем папку от старых файлов поиска
+    clean_old_search_files(current_search_files, "data/services")
+
+    print(f"\n✅ Сохранены файлы поиска: {', '.join(current_search_files)}")
+
+
+def clean_old_search_files(current_files: set, directory: str):
+    """
+    Удаляет все файлы поиска, которых нет в списке текущих.
+
+    Args:
+        current_files: множество имен файлов, которые нужно сохранить
+        directory: директория с файлами
+    """
+    if not os.path.exists(directory):
+        return
+
+    deleted_count = 0
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+
+        # Пропускаем, если это директория
+        if os.path.isdir(file_path):
+            continue
+
+        # Проверяем, что это файл поиска (начинается с search_)
+        if filename.startswith('search_') and filename.endswith('.json'):
+            # Если файла нет в списке текущих - удаляем
+            if filename not in current_files:
+                try:
+                    os.remove(file_path)
+                    logger.info(f"🗑️ Удален старый файл поиска: {filename}")
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Не удалось удалить {filename}: {e}")
+
+    if deleted_count > 0:
+        logger.info(f"Всего удалено старых файлов поиска: {deleted_count}")
 
 
 def generate_main_page(input_date: str, excel_file: str):
@@ -173,20 +248,8 @@ def run_services(excel_file: str):
     save_text_response(investment_text, "investment.txt", "services")
 
     # Сервис 3: Простой поиск
-    print("\n" + "-" * 70)
-    print("🔍 СЕРВИС 3: Простой поиск")
-    print("-" * 70)
-
-    search_terms = ["Перевод", "Супермаркет", "Ресторан"]
-    for term in search_terms:
-        print(f"\n   Поиск по строке: '{term}'")
-        search_result = simple_search(transactions, term)
-        found_count = len(json.loads(search_result))
-        print(f"   Найдено транзакций: {found_count}")
-
-        # Сохраняем результат
-        safe_term = term.replace(" ", "_").lower()
-        save_json_response(search_result, f"search_{safe_term}.json", "services")
+    search_terms = ["Перевод", "Супермаркет", "Рестораны"]
+    save_search_results(search_terms, transactions, services)
 
     # Сервис 4: Поиск по телефону
     print("\n" + "-" * 70)
@@ -305,7 +368,7 @@ def main():
         print("\n💡 Совет: загрузите файл с данными data/operations.xlsx")
         return
 
-    input_date = "15.12.2021"
+    input_date = "18.12.2021"
 
     # 1. Генерация главной страницы
     generate_main_page(input_date, excel_file)
