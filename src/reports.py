@@ -21,18 +21,23 @@ logger.setLevel(logging.WARNING)
 # ============================================================================
 
 
-def save_report(clean_all: bool = True, filename: Optional[str] = None) -> Callable:
+def save_report(filename: Optional[str] = None, pattern: Optional[str] = None) -> Callable:
     """
     Декоратор для сохранения результатов отчета в файл
-    При каждом вызове старый файл удаляется и создается новый.
+    - Если filename указан без даты: файл перезаписывается при каждом вызове.
+    - Если filename содержит дату: удаляются все файлы с таким паттерном,
+      создается новый с текущей датой и временем.
+    - Если filename не указан: генерируется имя с датой,
+      удаляются все файлы с паттерном имени функции.
 
     Параметры:
-        clean_all: если True, очищает всю папку reports перед записью
-        filename: имя файла для сохранения (если не указано, генерируется автоматически)
+        filename: имя файла для сохранения (может содержать {date} для подстановки)
+        pattern: паттерн для удаления старых файлов (если не указан, определяется автоматически)
 
     Примеры использования:
-        @save_report()  # сохранит в файл с авто-именем
-        @save_report("my_report.json")  # сохранит в указанный файл
+        @save_report()  # авто-имя с датой, удаляет старые файлы этой функции
+        @save_report("my_report.json")  # всегда перезаписывает один файл
+        @save_report("report_{date}.json")  # создает файлы с датой, удаляет старые
     """
 
     def decorator(func: Callable) -> Callable:
@@ -45,40 +50,65 @@ def save_report(clean_all: bool = True, filename: Optional[str] = None) -> Calla
             reports_dir = "data/reports"
             os.makedirs(reports_dir, exist_ok=True)
 
-            # Очищаем всю папку, если нужно
-            if clean_all:
-                for old_file in os.listdir(reports_dir):
-                    if old_file.endswith(".json"):
-                        old_path = os.path.join(reports_dir, old_file)
-                        try:
-                            os.remove(old_path)
-                            logger.info(f"🗑️ Удален файл: {old_file}")
-                        except Exception as e:
-                            logger.warning(f"Не удалось удалить {old_file}: {e}")
+            # Определяем имя файла и паттерн для удаления
+            current_time = datetime.now()
+            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
+            date_str = current_time.strftime("%Y%m%d")
 
-            # Определяем имя файла для сохранения
+            # Определяем имя файла и паттерн для удаления
             if filename:
-                output_file = filename
+                # Если в имени есть {date}, подставляем текущую дату
+                if "{date}" in filename:
+                    base_filename = filename.replace("{date}", date_str)
+                    output_file = base_filename
+                    # Паттерн для удаления: часть до даты
+                    pattern_to_use = pattern or filename.split("{date}")[0]
+                else:
+                    # Простое имя файла - перезаписываем
+                    output_file = filename
+                    pattern_to_use = None
             else:
-                # Генерируем имя файла: функция_год-месяц-день_час-минута.json
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                # Авто-имя: имя функции + timestamp
                 output_file = f"{func.__name__}_{timestamp}.json"
+                # Паттерн для удаления: имя функции
+                pattern_to_use = pattern or func.__name__
 
             filepath = os.path.join(reports_dir, output_file)
 
-            # Если файл существует, удаляем его
-            if os.path.exists(filepath):
-                os.remove(filepath)
+            # Удаляем старые файлы по паттерну
+            if pattern_to_use:
+                deleted_count = 0
+                for old_file in os.listdir(reports_dir):
+                    if not old_file.endswith(".json"):
+                        continue
+
+                    # Проверяем, соответствует ли файл паттерну
+                    if pattern_to_use in old_file:
+                        old_path = os.path.join(reports_dir, old_file)
+                        try:
+                            # Не удаляем текущий файл (если он уже существует)
+                            if old_file != output_file:
+                                os.remove(old_path)
+                                logger.info(f"🗑️ Удален старый файл по паттерну '{pattern_to_use}': {old_file}")
+                                deleted_count += 1
+                        except Exception as e:
+                            logger.warning(f"Не удалось удалить {old_file}: {e}")
+
+                if deleted_count > 0:
+                    logger.info(f"Всего удалено файлов по паттерну '{pattern_to_use}': {deleted_count}")
+            else:
+                # Если нет паттерна, просто удаляем существующий файл (перезапись)
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                    logger.info(f"🗑️ Удален старый файл: {output_file}")
 
             # Сохраняем результат
             try:
                 if isinstance(result, pd.DataFrame):
-                    # Если результат DataFrame, конвертируем в JSON
                     result_to_save = result.to_dict(orient="records")
                     with open(filepath, "w", encoding="utf-8") as f:
                         json.dump(result_to_save, f, ensure_ascii=False, indent=2, default=str)
                 else:
-                    # Если результат уже строка или другой тип
                     with open(filepath, "w", encoding="utf-8") as f:
                         if isinstance(result, str):
                             f.write(result)
@@ -148,7 +178,7 @@ def filter_last_3_months(transactions: pd.DataFrame, end_date: datetime) -> pd.D
 # ============================================================================
 
 
-@save_report()
+@save_report("spending_by_category.json")
 def spending_by_category(transactions: pd.DataFrame, category: str, date: Optional[str] = None) -> pd.DataFrame:
     """
     Отчет 1: Траты по заданной категории за последние 3 месяца
@@ -353,7 +383,7 @@ def spending_by_workday(transactions: pd.DataFrame, date: Optional[str] = None) 
 # ============================================================================
 
 
-@save_report(False, "detailed_category_analysis.json")
+@save_report("detailed_category_analysis.json")
 def detailed_category_analysis(transactions: pd.DataFrame, category: str, date: Optional[str] = None) -> dict:
     """
     Детальный анализ по категории (дополнительная функция)

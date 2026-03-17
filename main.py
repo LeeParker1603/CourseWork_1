@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
+ANALYSIS_DATE = "18.12.2021"
+
+
 def ensure_directories():
     """
     Создает необходимые директории, если их нет
@@ -121,7 +124,7 @@ def save_search_results(search_terms: List[str], transactions, services_mod):
     for term in search_terms:
         print(f"\n   Поиск по строке: '{term}'")
         search_result = services_mod.simple_search(transactions, term)
-        safe_term = term.replace(' ', '_').lower()
+        safe_term = term.replace(" ", "_").lower()
         filename = f"search_{safe_term}.json"
 
         # Добавляем в множество текущих файлов
@@ -156,7 +159,7 @@ def clean_old_search_files(current_files: set, directory: str):
             continue
 
         # Проверяем, что это файл поиска (начинается с search_)
-        if filename.startswith('search_') and filename.endswith('.json'):
+        if filename.startswith("search_") and filename.endswith(".json"):
             # Если файла нет в списке текущих - удаляем
             if filename not in current_files:
                 try:
@@ -295,25 +298,25 @@ def run_reports(excel_file: str):
     # Отчет 1: Траты по категории
     print("\n" + "-" * 70)
     print("📊 ОТЧЕТ 1: Траты по категории 'Супермаркеты'")
-    result1 = spending_by_category(transactions_df, "Супермаркеты", "15.12.2021")
+    result1 = spending_by_category(transactions_df, "Супермаркеты", ANALYSIS_DATE)
     print(result1.to_string() if not result1.empty else "Нет данных")
 
     # Отчет 2: Траты по дням недели
     print("\n" + "-" * 70)
     print("📊 ОТЧЕТ 2: Траты по дням недели")
-    result2 = spending_by_weekday(transactions_df, "15.12.2021")
+    result2 = spending_by_weekday(transactions_df, ANALYSIS_DATE)
     print(result2.to_string())
 
     # Отчет 3: Рабочие/выходные
     print("\n" + "-" * 70)
     print("📊 ОТЧЕТ 3: Рабочие и выходные дни")
-    result3 = spending_by_workday(transactions_df, "15.12.2021")
+    result3 = spending_by_workday(transactions_df, ANALYSIS_DATE)
     print(result3.to_string())
 
     # Дополнительный отчет
     print("\n" + "-" * 70)
     print("📊 ОТЧЕТ 4: Детальный анализ категории 'Рестораны'")
-    result4 = detailed_category_analysis(transactions_df, "Рестораны", "15.12.2021")
+    result4 = detailed_category_analysis(transactions_df, "Рестораны", ANALYSIS_DATE)
     print(json.dumps(result4, ensure_ascii=False, indent=2)[:500] + "...")
 
     print("\n✅ Отчеты выполнены")
@@ -330,6 +333,7 @@ def print_summary():
     # Проверяем наличие файлов
     responses_dir = "data/responses"
     services_dir = "data/services"
+    reports_dir = "data/reports"
 
     if os.path.exists(responses_dir):
         print(f"\n📁 Папка: {responses_dir}/")
@@ -343,6 +347,13 @@ def print_summary():
         print(f"\n📁 Папка: {services_dir}/")
         for file in sorted(os.listdir(services_dir)):
             filepath = os.path.join(services_dir, file)
+            size = os.path.getsize(filepath)
+            print(f"   📄 {file} ({size} bytes)")
+
+    if os.path.exists(reports_dir):
+        print(f"\n📁 Папка: {reports_dir}/")
+        for file in sorted(os.listdir(reports_dir)):
+            filepath = os.path.join(reports_dir, file)
             size = os.path.getsize(filepath)
             print(f"   📄 {file} ({size} bytes)")
 
@@ -368,13 +379,11 @@ def main():
         print("\n💡 Совет: загрузите файл с данными data/operations.xlsx")
         return
 
-    input_date = "18.12.2021"
-
     # 1. Генерация главной страницы
-    generate_main_page(input_date, excel_file)
+    generate_main_page(ANALYSIS_DATE, excel_file)
 
     # 2. Генерация страницы событий
-    generate_events_page(input_date, excel_file)
+    generate_events_page(ANALYSIS_DATE, excel_file)
 
     # 3. Запуск сервисов
     run_services(excel_file)

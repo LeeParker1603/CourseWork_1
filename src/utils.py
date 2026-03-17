@@ -11,7 +11,6 @@ import requests
 from dotenv import load_dotenv
 from requests.exceptions import RequestException
 
-
 load_dotenv()
 
 # # Настройка логирования
@@ -108,7 +107,7 @@ def get_currency_rates(currencies: list) -> list:
     """
     currency_rates = []
 
-    api_key = os.getenv('API_KEY_APILAYER')
+    api_key = os.getenv("API_KEY_APILAYER")
 
     base_url = "https://api.apilayer.com/exchangerates_data/latest"
 
@@ -117,15 +116,10 @@ def get_currency_rates(currencies: list) -> list:
         symbols = ",".join(currencies)
 
         # Параметры запроса
-        params = {
-            "base": "RUB",
-            "symbols": symbols
-        }
+        params = {"base": "RUB", "symbols": symbols}
 
         # Заголовки с API ключом
-        headers = {
-            "apikey": api_key
-        }
+        headers = {"apikey": api_key}
 
         # Выполняем GET запрос с параметрами
         response = requests.get(base_url, params=params, headers=headers, timeout=5)
@@ -141,46 +135,32 @@ def get_currency_rates(currencies: list) -> list:
                         # API возвращает RUB → currency, нам нужно currency → RUB
                         currency_to_rub = 1 / data["rates"][currency]
 
-                        currency_rates.append({
-                            "currency": currency,
-                            "rate": round(currency_to_rub, 2),
-                        })
+                        currency_rates.append(
+                            {
+                                "currency": currency,
+                                "rate": round(currency_to_rub, 2),
+                            }
+                        )
                     else:
-                        currency_rates.append({
-                            "currency": currency,
-                            "rate": None,
-                            "error": "Валюта не найдена в ответе"
-                        })
+                        currency_rates.append(
+                            {"currency": currency, "rate": None, "error": "Валюта не найдена в ответе"}
+                        )
             else:
                 for currency in currencies:
-                    currency_rates.append({
-                        "currency": currency,
-                        "rate": None,
-                        "error": "Нет данных о курсах"
-                    })
+                    currency_rates.append({"currency": currency, "rate": None, "error": "Нет данных о курсах"})
         else:
             for currency in currencies:
-                currency_rates.append({
-                    "currency": currency,
-                    "rate": None,
-                    "error": f"Ошибка API: {response.status_code}"
-                })
+                currency_rates.append(
+                    {"currency": currency, "rate": None, "error": f"Ошибка API: {response.status_code}"}
+                )
 
     except RequestException as e:
         for currency in currencies:
-            currency_rates.append({
-                "currency": currency,
-                "rate": None,
-                "error": f"Ошибка подключения: {str(e)}"
-            })
+            currency_rates.append({"currency": currency, "rate": None, "error": f"Ошибка подключения: {str(e)}"})
 
     except Exception as e:
         for currency in currencies:
-            currency_rates.append({
-                "currency": currency,
-                "rate": None,
-                "error": f"Неизвестная ошибка: {str(e)}"
-            })
+            currency_rates.append({"currency": currency, "rate": None, "error": f"Неизвестная ошибка: {str(e)}"})
 
     return currency_rates
 
@@ -190,16 +170,7 @@ def get_usd_to_rub_rate() -> float:
     Получение текущего курса USD к RUB с кэшированием на 1 час.
     """
     try:
-        url = "https://api.exchangerate-api.com/v4/latest/USD"
-        response = requests.get(url, timeout=5)
-
-        if response.status_code == 200:
-            data = response.json()
-            rub_rate = data.get("rates", {}).get("RUB")
-            if rub_rate:
-                return float(rub_rate)
-
-        # Запасной вариант: Центробанк РФ
+        # Запрашиваем курс доллара в Центробанке РФ
         url = "https://www.cbr-xml-daily.ru/latest.js"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
@@ -210,47 +181,38 @@ def get_usd_to_rub_rate() -> float:
 
     except Exception as e:
         print(f"⚠️ Ошибка получения курса USD/RUB: {e}")
-
-    print("⚠️ Использую тестовый курс USD/RUB = 92.45")
-    return 92.45
+        return 1.0
 
 
-def get_stock_prices_alphavantage(symbols: List[str] = None) -> List[Dict[str, Any]]:
+def get_stock_prices(symbols: list) -> list:
     """
     Получение цен акций через Alpha Vantage API (GLOBAL_QUOTE).
     Цены конвертируются в рубли.
 
     Args:
-        symbols: список тикеров (например, ["AAPL", "AMZN", "GOOGL", "MSFT", "TSLA"])
+        symbols: список тикеров (из файла user_settings.json)
 
     Returns:
         list: список словарей с информацией об акциях в рублях
     """
-    if symbols is None:
-        settings = load_user_settings()
-        symbols = settings.get("user_stocks", [])
 
     stock_prices = []
 
     # Получаем API ключ
-    api_key = os.getenv('ALPHA_VANTAGE_API_KEY')
+    api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
 
     # Получаем курс USD/RUB для конвертации
     usd_to_rub = get_usd_to_rub_rate()
 
+    print(f"📡 Начинаю получение данных для {len(symbols)} акций...")
 
     # Базовый URL Alpha Vantage API
     base_url = "https://www.alphavantage.co/query"
 
-    for symbol in symbols:
+    for i, symbol in enumerate(symbols):
         try:
-            params = {
-                "function": "GLOBAL_QUOTE",
-                "symbol": symbol,
-                "apikey": api_key
-            }
+            params = {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key}
 
-            print(f"📡 Запрос к Alpha Vantage для {symbol}...")
             response = requests.get(base_url, params=params, timeout=10)
 
             if response.status_code == 200:
@@ -266,82 +228,32 @@ def get_stock_prices_alphavantage(symbols: List[str] = None) -> List[Dict[str, A
                         price_usd = float(price_usd_str)
                         price_rub = price_usd * usd_to_rub
 
-                        stock_prices.append({
-                            "symbol": symbol,
-                            "price_usd": round(price_usd, 2),
-                            "price_rub": round(price_rub, 2),
-                            "currency": "RUB",
-                            "exchange_rate": round(usd_to_rub, 2),
-                            "change": quote.get("09. change", "0"),
-                            "change_percent": quote.get("10. change percent", "0%"),
-                            "volume": quote.get("06. volume", "0"),
-                            "latest_trading_day": quote.get("07. latest trading day", ""),
-                            "source": "Alpha Vantage"
-                        })
+                        stock_prices.append({"stock": symbol, "price": round(price_rub, 2)})
+                        print(f"      ✅ {symbol}: ${price_usd:.2f} = {price_rub:.2f} ₽")
                     except ValueError:
-                        stock_prices.append({
-                            "symbol": symbol,
-                            "price_rub": None,
-                            "error": f"Неверный формат цены: {price_usd_str}"
-                        })
+                        stock_prices.append(
+                            {"stock": symbol, "price": None, "error": f"Неверный формат цены: {price_usd_str}"}
+                        )
                 else:
                     # Проверяем на лимит запросов
                     if "Note" in data:
                         error_msg = data["Note"]
-                        print(f"⚠️ Лимит API: {error_msg[:100]}")
-                        stock_prices.append({
-                            "symbol": symbol,
-                            "price_rub": None,
-                            "error": "Превышен лимит запросов к API"
-                        })
+                        stock_prices.append({"stock": symbol, "price": None, "error": "Превышен лимит запросов к API"})
                     else:
-                        stock_prices.append({
-                            "symbol": symbol,
-                            "price_rub": None,
-                            "error": "Нет данных по тикеру"
-                        })
+                        stock_prices.append({"stock": symbol, "price": None, "error": "Нет данных по тикеру"})
             else:
-                stock_prices.append({
-                    "symbol": symbol,
-                    "price_rub": None,
-                    "error": f"Ошибка API: {response.status_code}"
-                })
+                stock_prices.append({"stock": symbol, "price": None, "error": f"Ошибка API: {response.status_code}"})
 
-            # Небольшая задержка между запросами (5 запросов в минуту для бесплатного тарифа)
-            time.sleep(12)  # 60/5 = 12 секунд
+                # Задержка между запросами, но не после последнего
+            if i < len(symbols) - 1:  # не ждем после последнего символа
+                time.sleep(12)  # 60/5 = 12 секунд
 
         except RequestException as e:
-            stock_prices.append({
-                "symbol": symbol,
-                "price_rub": None,
-                "error": f"Ошибка подключения: {str(e)}"
-            })
+            stock_prices.append({"stock": symbol, "price": None, "error": f"Ошибка подключения: {str(e)}"})
         except Exception as e:
-            stock_prices.append({
-                "symbol": symbol,
-                "price_rub": None,
-                "error": f"Неизвестная ошибка: {str(e)}"
-            })
+            stock_prices.append({"stock": symbol, "price": None, "error": f"Неизвестная ошибка: {str(e)}"})
 
     return stock_prices
-
-
-def get_stock_prices(stocks: list) -> list:
-    """
-    Получение цен акций (основная функция, используемая для вызова).
-    Автоматически определяет доступность API и использует тестовые данные при необходимости.
-    """
-    api_key = os.getenv('ALPHA_VANTAGE_API_KEY')
-
-    if api_key:
-        try:
-            return get_stock_prices_alphavantage(stocks)
-        except Exception as e:
-            print(f"⚠️ Ошибка Alpha Vantage API: {e}, использую тестовые данные")
-            pass
-    else:
-        print("⚠️ Alpha Vantage API ключ не найден, использую тестовые данные")
-        pass
 
 
 def calculate_card_data(df: pd.DataFrame) -> list:

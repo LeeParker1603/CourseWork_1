@@ -133,18 +133,19 @@ pytest tests/ -v
 pytest tests/test_services.py::test_cashback_rounding -v
 ```
 
-### 5.3. Проект покрыт модульными (unit) тестами на 88%
+### 5.3. Проект покрыт модульными (unit) тестами на 87%
 
 ```
 Name              Stmts   Miss  Cover
 -------------------------------------
 src\__init__.py       0      0   100%
-src\reports.py      166     22    87%
+src\reports.py      194     28    86%
 src\services.py     190     27    86%
-src\utils.py        181     17    91%
+src\utils.py        235     26    89%
 src\views.py        146     19    87%
 -------------------------------------
-TOTAL               683     85    88%
+TOTAL               765    100    87%
+
 
 ```
 

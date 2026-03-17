@@ -139,8 +139,14 @@ def test_generate_main_page_with_empty_data(mock_read_excel) -> None:
     assert "error" in response
 
 
+@patch("src.views.get_stock_prices", return_value=[])  # Мок акций
+@patch("src.views.get_currency_rates", return_value=[])  # Мок валют
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})  # Мок настроек
 @patch("src.views.read_transactions_from_excel")
-def test_generate_main_page_cards_calculation(mock_read_excel, mock_transactions_df) -> None:
+@patch("time.sleep", return_value=None)  # Мок sleep
+def test_generate_main_page_cards_calculation(
+    mock_sleep, mock_read_excel, mock_settings, mock_currency, mock_stocks, mock_transactions_df
+) -> None:
     """Тест расчета данных по картам"""
     mock_read_excel.return_value = mock_transactions_df
 
@@ -151,16 +157,29 @@ def test_generate_main_page_cards_calculation(mock_read_excel, mock_transactions
     assert response["cards"][0]["last_digits"] in ["1234", "5678"]
 
 
+@patch("src.views.get_stock_prices", return_value=[])  # Мок акций
+@patch("src.views.get_currency_rates", return_value=[])  # Мок валют
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})  # Мок настроек
+@patch("src.views.get_date_range")
 @patch("src.views.read_transactions_from_excel")
-def test_generate_main_page_with_int64_data(mock_read_excel, mock_transactions_df_with_int64) -> None:
-    """Тест с данными содержащими int64 (должен работать без ошибок)"""
-    mock_read_excel.return_value = mock_transactions_df_with_int64
+@patch("time.sleep", return_value=None)  # Мок sleep
+def test_generate_events_page_with_mocked_date_range(
+    mock_sleep, mock_read_excel, mock_get_date_range, mock_settings, mock_currency, mock_stocks, mock_transactions_df
+) -> None:
+    """Тест с моком функции get_date_range"""
 
-    # Должно работать без ошибок сериализации
-    response_json = generate_main_page_response("15.12.2021", "fake_path.xls")
+    mock_read_excel.return_value = mock_transactions_df
+    mock_get_date_range.return_value = (datetime(2021, 12, 1), datetime(2021, 12, 15))
+
+    response_json = generate_events_page_response("15.12.2021", "M", "fake_path.xls")
     response = json.loads(response_json)
 
-    assert "greeting" in response
+    mock_get_date_range.assert_called_once_with("15.12.2021", "M")
+    assert "expenses" in response
+    assert "income" in response
+
+    # Проверяем, что sleep не вызывался
+    mock_sleep.assert_not_called()
 
 
 # ============================================================================
@@ -191,12 +210,111 @@ def test_generate_events_page_with_all_mocks(
     assert "stock_prices" in response
 
 
+@patch("src.views.get_stock_prices", return_value=[])
+@patch("src.views.get_currency_rates", return_value=[])
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})
+@patch("src.views.read_transactions_from_excel")
+@patch("time.sleep", return_value=None)
+def test_generate_main_page_int64_serialization(
+    mock_sleep, mock_read_excel, mock_settings, mock_currency, mock_stocks, mock_transactions_df_with_int64
+):
+    """Тест сериализации int64 значений"""
+
+    mock_read_excel.return_value = mock_transactions_df_with_int64
+
+    response_json = generate_main_page_response("15.12.2021", "fake_path.xls")
+    response = json.loads(response_json)
+
+    # Проверяем наличие всех ключей
+    assert "greeting" in response
+    assert "date" in response
+    assert "cards" in response
+    assert "top_transactions" in response
+
+    # Проверяем, что все числовые значения в cards конвертированы в стандартные типы
+    for card in response["cards"]:
+        # Проверяем ключи
+        assert "last_digits" in card
+        assert "total_spent" in card
+        assert "cashback" in card
+
+        # Проверяем типы
+        assert isinstance(card["last_digits"], str)
+        assert isinstance(card["total_spent"], (int, float))
+        assert isinstance(card["cashback"], (int, float))
+
+        # Дополнительно проверяем, что это не numpy типы
+        assert not hasattr(card["total_spent"], "dtype")
+        assert not hasattr(card["cashback"], "dtype")
+
+    # Проверяем top_transactions
+    for transaction in response["top_transactions"]:
+        assert "date" in transaction
+        assert "amount" in transaction
+        assert "category" in transaction
+        assert "description" in transaction
+
+        assert isinstance(transaction["date"], str)
+        assert isinstance(transaction["amount"], (int, float))
+        assert isinstance(transaction["category"], str)
+        assert isinstance(transaction["description"], str)
+
+        # Проверяем, что amount не numpy тип
+        assert not hasattr(transaction["amount"], "dtype")
+
+    # Проверяем, что дата осталась строкой
+    assert isinstance(response["date"], str)
+    assert response["date"] == "15.12.2021"
+
+    # Проверяем, что приветствие - строка
+    assert isinstance(response["greeting"], str)
+
+
+@pytest.mark.parametrize("period", ["W", "M", "Y", "ALL"])
+@patch("src.views.get_stock_prices", return_value=[])
+@patch("src.views.get_currency_rates", return_value=[])
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})
 @patch("src.views.get_date_range")
 @patch("src.views.read_transactions_from_excel")
-def test_generate_events_page_with_mocked_date_range(
-    mock_read_excel, mock_get_date_range, mock_transactions_df  # используем фикстуру с datetime
+@patch("time.sleep", return_value=None)
+def test_events_page_with_different_periods(
+    mock_sleep,
+    mock_read_excel,
+    mock_get_date_range,
+    mock_settings,
+    mock_currency,
+    mock_stocks,
+    period,
+    mock_transactions_df,
 ) -> None:
-    """Тест с моком функции get_date_range"""
+    """Тест страницы событий с разными периодами"""
+
+    mock_read_excel.return_value = mock_transactions_df
+    mock_get_date_range.return_value = (datetime(2021, 12, 1), datetime(2021, 12, 15))
+
+    response_json = generate_events_page_response("15.12.2021", period, "fake_path.xls")
+    response = json.loads(response_json)
+
+    assert "expenses" in response
+    assert "income" in response
+
+    # Проверяем, что get_date_range был вызван с правильным периодом
+    mock_get_date_range.assert_called_once_with("15.12.2021", period)
+
+    # Проверяем, что sleep не вызывался
+    mock_sleep.assert_not_called()
+
+
+@patch("src.views.get_stock_prices", return_value=[])
+@patch("src.views.get_currency_rates", return_value=[])
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})
+@patch("src.views.get_date_range")
+@patch("src.views.read_transactions_from_excel")
+@patch("time.sleep", return_value=None)
+def test_events_page_expenses_calculation(
+    mock_sleep, mock_read_excel, mock_get_date_range, mock_settings, mock_currency, mock_stocks, mock_transactions_df
+) -> None:
+    """Тест расчета расходов на странице событий"""
 
     mock_read_excel.return_value = mock_transactions_df
     mock_get_date_range.return_value = (datetime(2021, 12, 1), datetime(2021, 12, 15))
@@ -204,33 +322,20 @@ def test_generate_events_page_with_mocked_date_range(
     response_json = generate_events_page_response("15.12.2021", "M", "fake_path.xls")
     response = json.loads(response_json)
 
-    mock_get_date_range.assert_called_once_with("15.12.2021", "M")
-    assert "expenses" in response
-
-
-@pytest.mark.parametrize("period", ["W", "M", "Y", "ALL"])
-@patch("src.views.read_transactions_from_excel")
-def test_events_page_with_different_periods(mock_read_excel, period, mock_transactions_df) -> None:
-    """Тест страницы событий с разными периодами"""
-    mock_read_excel.return_value = mock_transactions_df
-
-    response_json = generate_events_page_response("15.12.2021", period, "fake_path.xls")
-    response = json.loads(response_json)
-
-    assert "expenses" in response
-
-
-@patch("src.views.read_transactions_from_excel")
-def test_events_page_expenses_calculation(mock_read_excel, mock_transactions_df) -> None:
-    """Тест расчета расходов на странице событий"""
-
-    mock_read_excel.return_value = mock_transactions_df
-
-    response_json = generate_events_page_response("15.12.2021", "M", "fake_path.xls")
-    response = json.loads(response_json)
-
     # Общая сумма расходов: 1500 + 500 = 2000
     assert response["expenses"]["total_amount"] == 2000
+
+    # Проверяем структуру расходов
+    assert "main" in response["expenses"]
+    assert "transfers_and_cash" in response["expenses"]
+
+    # Проверяем, что все моки были вызваны
+    mock_read_excel.assert_called_once_with("fake_path.xls")
+    mock_get_date_range.assert_called_once_with("15.12.2021", "M")
+    mock_settings.assert_called_once()
+    mock_currency.assert_called_once_with([])
+    mock_stocks.assert_called_once_with([])
+    mock_sleep.assert_not_called()
 
 
 # ============================================================================
@@ -500,9 +605,16 @@ def test_calculate_income_data_complex() -> None:
     assert result["main"][0]["amount"] >= result["main"][1]["amount"]
 
 
+@patch("src.views.get_stock_prices", return_value=[])
+@patch("src.views.get_currency_rates", return_value=[])
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})
 @patch("src.views.read_transactions_from_excel")
-def test_generate_main_page_with_filter_error(mock_read) -> None:
+@patch("time.sleep", return_value=None)
+def test_generate_main_page_with_filter_error(
+    mock_sleep, mock_read, mock_settings, mock_currency, mock_stocks
+) -> None:
     """Тест главной страницы с ошибкой фильтрации"""
+
     df = pd.DataFrame({"Дата операции": ["2021-12-15"], "Номер карты": ["1234"], "Сумма операции": [-1500]})
     mock_read.return_value = df
 
@@ -512,34 +624,88 @@ def test_generate_main_page_with_filter_error(mock_read) -> None:
 
         # Должен быть ответ, даже при ошибке
         assert "greeting" in response
+        assert "cards" in response
+        assert "top_transactions" in response
+        assert "currency_rates" in response
+        assert "stock_prices" in response
+
+        # Проверяем, что ошибка фильтрации не привела к падению
+        mock_sleep.assert_not_called()
 
 
+@patch("src.views.get_stock_prices", return_value=[])
+@patch("src.views.get_currency_rates", return_value=[])
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})
 @patch("src.views.read_transactions_from_excel")
-def test_generate_main_page_with_calculation_error(mock_read) -> None:
+@patch("time.sleep", return_value=None)
+def test_generate_main_page_with_calculation_error(
+    mock_sleep, mock_read, mock_settings, mock_currency, mock_stocks
+) -> None:
     """Тест главной страницы с ошибкой расчета"""
+
     df = pd.DataFrame({"Дата операции": ["2021-12-15"], "Номер карты": ["1234"], "Сумма операции": [-1500]})
     mock_read.return_value = df
 
-    with patch("src.views.calculate_card_data", side_effect=Exception("Ошибка")):
+    with patch("src.views.calculate_card_data", side_effect=Exception("Ошибка расчета")):
         response_json = generate_main_page_response("15.12.2021", "fake.xls")
         response = json.loads(response_json)
 
+        # Проверяем, что cards пустой при ошибке
         assert "cards" in response
         assert response["cards"] == []
 
+        # Проверяем, что остальные поля присутствуют
+        assert "greeting" in response
+        assert "date" in response
+        assert "top_transactions" in response
+        assert "currency_rates" in response
+        assert "stock_prices" in response
 
+        # Проверяем, что ошибка не повлияла на другие данные
+        assert response["date"] == "15.12.2021"
+
+        # Проверяем, что sleep не вызывался
+        mock_sleep.assert_not_called()
+
+
+@patch("src.views.get_stock_prices", return_value=[])
+@patch("src.views.get_currency_rates", return_value=[])
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})
+@patch("src.views.get_date_range", return_value=(datetime(2021, 12, 1), datetime(2021, 12, 15)))
 @patch("src.views.read_transactions_from_excel")
-def test_generate_events_page_with_calculation_error(mock_read) -> None:
+@patch("time.sleep", return_value=None)
+def test_generate_events_page_with_calculation_error(
+    mock_sleep, mock_read, mock_date_range, mock_settings, mock_currency, mock_stocks
+) -> None:
     """Тест страницы событий с ошибкой расчета"""
+
     df = pd.DataFrame({"Дата операции": [datetime(2021, 12, 15)], "Сумма операции": [-1500], "Категория": ["Еда"]})
     mock_read.return_value = df
 
-    with patch("src.views.calculate_expenses_data", side_effect=Exception("Ошибка")):
+    with patch("src.views.calculate_expenses_data", side_effect=Exception("Ошибка расчета")):
         response_json = generate_events_page_response("15.12.2021", "M", "fake.xls")
         response = json.loads(response_json)
 
+        # Проверяем, что expenses есть и total_amount = 0 при ошибке
         assert "expenses" in response
         assert response["expenses"]["total_amount"] == 0
+        assert "income" in response
+        assert "currency_rates" in response
+        assert "stock_prices" in response
+
+        # Проверяем структуру expenses при ошибке
+        assert "main" in response["expenses"]
+        assert "transfers_and_cash" in response["expenses"]
+        assert response["expenses"]["main"] == []
+        assert response["expenses"]["transfers_and_cash"] == []
+
+        # Проверяем, что все моки были вызваны
+        mock_read.assert_called_once_with("fake.xls")
+        mock_date_range.assert_called_once_with("15.12.2021", "M")
+        mock_settings.assert_called_once()
+        mock_currency.assert_called_once_with([])
+        mock_stocks.assert_called_once_with([])
+        mock_sleep.assert_not_called()
 
 
 @patch("src.views.load_user_settings")
@@ -656,19 +822,51 @@ def test_calculate_top_transactions_with_long_description() -> None:
     assert len(result[0]["description"]) <= 53  # 50 + '...'
 
 
+@patch("src.views.get_stock_prices", return_value=[])
+@patch("src.views.get_currency_rates", return_value=[])
+@patch("src.views.load_user_settings", return_value={"user_currencies": [], "user_stocks": []})
 @patch("src.views.convert_numpy_types")
 @patch("src.views.read_transactions_from_excel")
-def test_generate_main_page_with_conversion_error(mock_read, mock_convert) -> None:
+@patch("time.sleep", return_value=None)
+def test_generate_main_page_with_conversion_error(
+    mock_sleep, mock_read, mock_convert, mock_settings, mock_currency, mock_stocks
+) -> None:
     """Тест главной страницы с ошибкой конвертации типов"""
-    df = pd.DataFrame({"Дата операции": [datetime(2021, 12, 15)], "Номер карты": ["1234"], "Сумма операции": [-1500]})
+
+    # Создаем DataFrame с данными для top_transactions
+    df = pd.DataFrame(
+        {
+            "Дата операции": [datetime(2021, 12, 15)],
+            "Номер карты": ["1234"],
+            "Сумма операции": [-1500],
+            "Категория": ["Супермаркеты"],
+            "Описание": ["Пятерочка"],
+        }
+    )
     mock_read.return_value = df
     mock_convert.side_effect = Exception("Ошибка конвертации")
 
     response_json = generate_main_page_response("15.12.2021", "fake.xls")
     response = json.loads(response_json)
 
-    # Должен быть ответ даже при ошибке конвертации
+    # Проверяем наличие всех полей
     assert "greeting" in response
+    assert "date" in response
+    assert "cards" in response
+    assert "top_transactions" in response
+    assert "currency_rates" in response
+    assert "stock_prices" in response
+
+    # Проверяем, что данные есть
+    assert response["date"] == "15.12.2021"
+    assert len(response["cards"]) == 1
+    assert len(response["top_transactions"]) == 1  # Теперь должно быть 1
+
+    # Проверяем содержимое
+    assert response["cards"][0]["last_digits"] == "1234"
+    assert response["top_transactions"][0]["amount"] == 1500
+    assert response["top_transactions"][0]["category"] == "Супермаркеты"
+    assert response["top_transactions"][0]["description"] == "Пятерочка"
 
 
 @patch("src.views.get_date_range")
